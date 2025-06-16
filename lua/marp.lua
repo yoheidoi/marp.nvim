@@ -8,6 +8,8 @@ M.metadata = {
   html_files = {}, -- Store generated HTML file paths
   last_export = {}, -- Store last export info
   usage_stats = {}, -- Store usage statistics
+  process_retries = {}, -- Track retry attempts
+  browser_opened = {}, -- Track if browser was opened for buffer
 }
 
 -- Configuration
@@ -82,9 +84,22 @@ function M.watch()
   if M.active_processes[bufnr] then
     vim.notify("Stopping existing Marp process...", vim.log.levels.INFO)
     M.stop(bufnr)
-    -- Wait a bit for the process to stop
-    vim.wait(500)
+    -- Wait for process to stop completely
+    vim.wait(1000, function()
+      return M.active_processes[bufnr] == nil
+    end)
+
+    -- Force cleanup if still exists
+    if M.active_processes[bufnr] then
+      local job_id = M.active_processes[bufnr]
+      pcall(vim.fn.jobstop, job_id)
+      M.active_processes[bufnr] = nil
+    end
   end
+
+  -- Reset metadata for this buffer
+  M.metadata.process_retries[bufnr] = 0
+  M.metadata.browser_opened[bufnr] = false
 
   local marp_cmd = get_marp_cmd()
 
@@ -122,19 +137,37 @@ function M.watch()
   if not M.config.server_mode then
     vim.notify("Generating initial HTML...", vim.log.levels.INFO)
     local init_cmd = string.format("%s '%s' -o '%s'", marp_cmd, file, html_file)
-    vim.fn.system(init_cmd)
+    local result = vim.fn.system(init_cmd)
+
+    if vim.v.shell_error ~= 0 then
+      vim.notify("Failed to generate initial HTML: " .. result, vim.log.levels.ERROR)
+      return
+    end
+
+    -- Wait for file to be created
+    vim.wait(500, function()
+      return vim.fn.filereadable(html_file) == 1
+    end)
 
     if vim.fn.filereadable(html_file) == 1 then
       vim.notify("✅ Initial HTML generated", vim.log.levels.INFO)
-      -- Open browser immediately
-      M.open_browser("file://" .. html_file)
+      -- Delay browser opening to ensure file is ready
+      vim.defer_fn(function()
+        if not M.metadata.browser_opened[bufnr] then
+          M.open_browser("file://" .. html_file)
+          M.metadata.browser_opened[bufnr] = true
+        end
+      end, 200)
+    else
+      vim.notify("Failed to create HTML file", vim.log.levels.ERROR)
+      return
     end
   end
 
   -- Start Marp in a terminal
-  local _ = false -- server_started
-  local _ = false -- preview_opened
-  local _ = not M.config.server_mode -- html_generated
+  local last_update_time = 0
+  local update_debounce_ms = 1000 -- Debounce HTML update notifications
+
   -- Use shell to execute the command properly
   local shell_cmd = { "/bin/sh", "-c", cmd }
   local job_id = vim.fn.jobstart(shell_cmd, {
@@ -150,9 +183,13 @@ function M.watch()
             -- Always show all output to see what's happening
             vim.notify("[Marp] " .. clean_line, vim.log.levels.INFO)
 
-            -- Check for file conversion patterns
-            if clean_line:match("=>") then
-              vim.notify("🔄 HTML updated", vim.log.levels.INFO)
+            -- Check for file conversion patterns with debouncing
+            if clean_line:match("=>") or clean_line:match("has been written") then
+              local current_time = vim.loop.now()
+              if current_time - last_update_time > update_debounce_ms then
+                vim.notify("🔄 HTML updated", vim.log.levels.INFO)
+                last_update_time = current_time
+              end
             end
           end)
         end
@@ -167,17 +204,38 @@ function M.watch()
             -- Always show all output to see what's happening
             vim.notify("[Marp] " .. clean_line, vim.log.levels.INFO)
 
-            -- Check for file conversion patterns
-            if clean_line:match("=>") then
-              vim.notify("🔄 HTML updated", vim.log.levels.INFO)
+            -- Check for file conversion patterns with debouncing
+            if clean_line:match("=>") or clean_line:match("has been written") then
+              local current_time = vim.loop.now()
+              if current_time - last_update_time > update_debounce_ms then
+                vim.notify("🔄 HTML updated", vim.log.levels.INFO)
+                last_update_time = current_time
+              end
             end
           end)
         end
       end
     end,
-    on_exit = function()
+    on_exit = function(_, exit_code)
       M.active_processes[bufnr] = nil
-      vim.notify("Marp server stopped", vim.log.levels.INFO)
+
+      if exit_code ~= 0 and exit_code ~= 143 then -- 143 is SIGTERM
+        vim.notify("Marp process exited with code: " .. exit_code, vim.log.levels.WARN)
+
+        -- Auto-restart if it crashed (not user-initiated stop)
+        local retries = M.metadata.process_retries[bufnr] or 0
+        if retries < 3 and vim.api.nvim_buf_is_valid(bufnr) then
+          M.metadata.process_retries[bufnr] = retries + 1
+          vim.notify("Restarting Marp process (attempt " .. (retries + 1) .. "/3)...", vim.log.levels.INFO)
+          vim.defer_fn(function()
+            if vim.api.nvim_buf_is_valid(bufnr) then
+              M.watch()
+            end
+          end, 2000)
+        end
+      else
+        vim.notify("Marp server stopped", vim.log.levels.INFO)
+      end
     end,
   })
 
@@ -204,6 +262,9 @@ function M.stop(bufnr)
   local job_id = M.active_processes[bufnr]
 
   if job_id then
+    -- Prevent auto-restart
+    M.metadata.process_retries[bufnr] = 999
+
     -- Try to stop the job gracefully
     local success = pcall(function()
       vim.fn.jobstop(job_id)
@@ -212,10 +273,18 @@ function M.stop(bufnr)
     if success then
       vim.notify("Marp process stopped", vim.log.levels.INFO)
     else
-      vim.notify("Failed to stop Marp process", vim.log.levels.WARN)
+      -- Force kill if graceful stop failed
+      pcall(function()
+        vim.fn.system("kill -9 " .. job_id)
+      end)
+      vim.notify("Force stopped Marp process", vim.log.levels.WARN)
     end
 
     M.active_processes[bufnr] = nil
+
+    -- Clean up metadata
+    M.metadata.process_retries[bufnr] = nil
+    M.metadata.browser_opened[bufnr] = nil
   else
     vim.notify("No active Marp process for this buffer", vim.log.levels.INFO)
   end
@@ -492,19 +561,30 @@ function M.open_browser(url)
   local cmd
 
   if M.config.browser then
-    cmd = M.config.browser .. " " .. url
+    cmd = M.config.browser .. " '" .. url .. "'"
   elseif vim.fn.has("mac") == 1 then
-    cmd = "open " .. url
+    cmd = "open '" .. url .. "'"
   elseif vim.fn.has("unix") == 1 then
-    cmd = "xdg-open " .. url
+    cmd = "xdg-open '" .. url .. "' 2>/dev/null"
   elseif vim.fn.has("win32") == 1 then
-    cmd = "start " .. url
+    cmd = 'start "" "' .. url .. '"'
   else
     vim.notify("Could not detect browser", vim.log.levels.ERROR)
     return
   end
 
-  vim.fn.jobstart(cmd, { detach = true })
+  local job_id = vim.fn.jobstart(cmd, {
+    detach = true,
+    on_exit = function(_, exit_code)
+      if exit_code ~= 0 then
+        vim.notify("Failed to open browser", vim.log.levels.WARN)
+      end
+    end,
+  })
+
+  if job_id <= 0 then
+    vim.notify("Failed to start browser", vim.log.levels.ERROR)
+  end
 end
 
 -- List active servers
@@ -660,7 +740,8 @@ end
 
 -- Debug function to test Marp command
 function M.debug()
-  local file = vim.api.nvim_buf_get_name(0)
+  local bufnr = vim.api.nvim_get_current_buf()
+  local file = vim.api.nvim_buf_get_name(bufnr)
 
   if file == "" or not file:match("%.md$") then
     vim.notify("Not a markdown file", vim.log.levels.ERROR)
@@ -670,7 +751,25 @@ function M.debug()
   local marp_cmd = get_marp_cmd()
   local test_cmd = string.format("%s --version", marp_cmd)
 
+  vim.notify("=== Marp Debug Info ===", vim.log.levels.INFO)
   vim.notify("Testing Marp command...", vim.log.levels.INFO)
+
+  -- Show current state
+  vim.notify("Buffer: " .. bufnr, vim.log.levels.INFO)
+  vim.notify("File: " .. file, vim.log.levels.INFO)
+  vim.notify("Active process: " .. (M.active_processes[bufnr] or "none"), vim.log.levels.INFO)
+
+  -- Show metadata
+  if M.metadata.process_retries[bufnr] then
+    vim.notify("Process retries: " .. M.metadata.process_retries[bufnr], vim.log.levels.INFO)
+  end
+  if M.metadata.browser_opened[bufnr] then
+    vim.notify("Browser opened: " .. tostring(M.metadata.browser_opened[bufnr]), vim.log.levels.INFO)
+  end
+
+  -- Show config
+  vim.notify("Server mode: " .. tostring(M.config.server_mode), vim.log.levels.INFO)
+  vim.notify("Debug mode: " .. tostring(M.config.debug), vim.log.levels.INFO)
 
   -- Test if marp command works
   local shell_cmd = { "/bin/sh", "-c", test_cmd }
@@ -704,8 +803,12 @@ function M.debug()
         vim.notify("Try installing with: npm install -g @marp-team/marp-cli", vim.log.levels.INFO)
       else
         vim.notify("✅ Marp command is working!", vim.log.levels.INFO)
-        vim.notify("Debug mode: " .. (M.config.debug and "ON" or "OFF"), vim.log.levels.INFO)
         vim.notify("Command: " .. marp_cmd, vim.log.levels.INFO)
+
+        -- Test browser command
+        vim.notify("Testing browser...", vim.log.levels.INFO)
+        local browser_cmd = M.config.browser or (vim.fn.has("mac") == 1 and "open" or "xdg-open")
+        vim.notify("Browser command: " .. browser_cmd, vim.log.levels.INFO)
       end
     end,
   })
