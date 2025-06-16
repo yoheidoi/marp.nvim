@@ -139,3 +139,88 @@ require('marp').setup({
 - `debug = true`設定で詳細ログを確認
 - プロセス状況は`:MarpList`で確認
 - HTML生成パスは自動的にクリップボードにコピー
+
+## 開発で得られた知見（v1.1.1）
+
+### MarpWatchの安定性改善
+
+#### 問題と解決策
+
+1. **プロセス管理の不具合**
+   - 問題: jobstartで起動したプロセスが適切にクリーンアップされない
+   - 解決: プロセス停止時の待機処理とforce killの実装
+   ```lua
+   -- プロセス停止を確実に待つ
+   vim.wait(1000, function()
+     return M.active_processes[bufnr] == nil
+   end)
+   ```
+
+2. **ブラウザの重複起動**
+   - 問題: ファイル更新のたびにブラウザが新しく開く
+   - 解決: バッファごとにブラウザ起動状態を追跡
+   ```lua
+   M.metadata.browser_opened[bufnr] = true
+   ```
+
+3. **プロセスの異常終了**
+   - 問題: Marpプロセスがクラッシュした場合の対応不足
+   - 解決: 自動再起動メカニズム（最大3回）
+   ```lua
+   if exit_code ~= 0 and exit_code ~= 143 then
+     -- 自動再起動ロジック
+   end
+   ```
+
+4. **通知の過剰表示**
+   - 問題: HTML更新通知が頻繁に表示される
+   - 解決: 1秒間隔でのデバウンス実装
+
+#### ベストプラクティス
+
+1. **メタデータ管理**
+   - バッファごとの状態管理にテーブルを活用
+   - プロセスライフサイクルに関連する情報を一元管理
+
+2. **エラーハンドリング**
+   - vim.fn.jobstartのエラーは適切にpcallでラップ
+   - 終了コードごとの処理分岐（正常終了 vs 異常終了）
+
+3. **非同期処理**
+   - vim.defer_fnを使用して適切なタイミング制御
+   - vim.scheduleで安全なUIアップデート
+
+4. **デバッグ機能**
+   - 開発時に有用な状態情報の表示
+   - プロセス状態、メタデータ、設定値の確認
+
+### ローカル開発環境での検証
+
+```lua
+-- ~/.config/nvim/lua/plugins/init.lua での設定例
+{
+  "nwiizo/marp.nvim",
+  dir = vim.fn.expand "~/ghq/github.com/nwiizo/marp.nvim",
+  ft = "markdown",
+  cmd = { "MarpWatch", "MarpStop", ... },
+  config = function()
+    require("marp").setup {
+      debug = true,  -- ローカル開発時は必須
+    }
+  end,
+}
+```
+
+### リリースプロセス
+
+1. 品質チェック: `make check`でluacheckとstyluaを実行
+2. コミット: Conventional Commits形式（fix/feat/docs等）
+3. タグ付け: セマンティックバージョニングに従う
+4. GitHubリリース: `gh release create`で自動化
+
+### 今後の改善案
+
+- プロセス管理のさらなる最適化（プロセスプールの実装）
+- ブラウザとの双方向通信（WebSocket等）
+- より詳細なエラーレポート機能
+- パフォーマンスメトリクスの収集
