@@ -130,6 +130,7 @@ require('marp').setup({
   server_mode = false,  -- ウォッチモード使用
   show_tips = true,
   auto_copy_path = true,
+  html_option = true,  -- ウォッチモードで--htmlオプションを使用（デフォルト: true）
 })
 ```
 

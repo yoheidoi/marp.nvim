@@ -133,7 +133,8 @@ require('marp').setup({
   show_file_size = true,      -- Show file sizes after export
   suggest_gitignore = true,   -- Suggest adding *.html to .gitignore
   debug = false,              -- Enable debug logging (helpful for troubleshooting)
-  server_mode = false         -- Use server mode (-s) or watch mode (--watch)
+  server_mode = false,        -- Use server mode (-s) or watch mode (--watch)
+  html_option = true          -- Use --html option in watch mode (default: true)
 })
 ```
 
@@ -311,7 +312,8 @@ require('marp').setup({
   show_file_size = true,      -- エクスポート後にファイルサイズを表示
   suggest_gitignore = true,   -- *.htmlを.gitignoreに追加するよう提案
   debug = false,              -- デバッグログを有効化（トラブルシューティングに便利）
-  server_mode = false         -- サーバーモード(-s)またはウォッチモード(--watch)を使用
+  server_mode = false,        -- サーバーモード(-s)またはウォッチモード(--watch)を使用
+  html_option = true          -- ウォッチモードで--htmlオプションを使用（デフォルト: true）
 })
 ```
 
