@@ -35,6 +35,7 @@ M.config = {
   suggest_gitignore = true,
   debug = true, -- Enable debug logging
   server_mode = false, -- Use watch mode (-w) by default
+  html_option = true, -- Use --html option in watch mode by default
 }
 
 -- Setup function
@@ -112,8 +113,9 @@ function M.watch()
   if M.config.server_mode then
     cmd = string.format("%s -s '%s'", marp_cmd, file)
   else
-    -- Use --watch without -o (output file is determined automatically)
-    cmd = string.format("%s --watch '%s'", marp_cmd, file)
+    -- Use --watch with optional --html flag
+    local html_option = M.config.html_option and " --html" or ""
+    cmd = string.format("%s --watch '%s'%s", marp_cmd, file, html_option)
   end
 
   -- Show HTML file path
@@ -136,7 +138,8 @@ function M.watch()
   -- First generate HTML file if in watch mode
   if not M.config.server_mode then
     vim.notify("Generating initial HTML...", vim.log.levels.INFO)
-    local init_cmd = string.format("%s '%s' -o '%s'", marp_cmd, file, html_file)
+    local html_option = M.config.html_option and " --html" or ""
+    local init_cmd = string.format("%s '%s'%s -o '%s'", marp_cmd, file, html_option, html_file)
     local result = vim.fn.system(init_cmd)
 
     if vim.v.shell_error ~= 0 then
