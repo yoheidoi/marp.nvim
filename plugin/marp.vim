@@ -22,6 +22,9 @@ command! MarpDebug lua require('marp').debug()
 " Export commands
 command! -nargs=? -complete=customlist,s:complete_export_formats MarpExport lua require('marp').export(<q-args>)
 
+" Thumbnail command (first slide only)
+command! -nargs=? -complete=customlist,s:complete_thumbnail_formats MarpThumbnail lua require('marp').thumbnail(<q-args>)
+
 " Theme commands
 command! -nargs=1 -complete=customlist,s:complete_themes MarpTheme lua require('marp').set_theme(<q-args>)
 
@@ -30,7 +33,11 @@ command! -nargs=1 -complete=customlist,s:complete_snippets MarpSnippet lua requi
 
 " Completion functions
 function! s:complete_export_formats(A, L, P)
-  return ['html', 'pdf', 'pptx', 'png', 'jpeg']
+  return ['html', 'pdf', 'pptx', 'png', 'jpeg', 'notes']
+endfunction
+
+function! s:complete_thumbnail_formats(A, L, P)
+  return ['png', 'jpeg']
 endfunction
 
 function! s:complete_themes(A, L, P)

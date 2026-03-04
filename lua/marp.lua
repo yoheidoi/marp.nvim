@@ -27,6 +27,7 @@ M.config = {
     pptx = "--pptx",
     png = "--images png",
     jpeg = "--images jpeg",
+    notes = "--notes",
   },
   -- New config options for tips
   show_tips = true,
@@ -38,6 +39,16 @@ M.config = {
   html_option = true, -- Use --html option in watch mode by default
   allow_local_files = true, -- Use --allow-local-files for local asset loading
   node_options = "", -- Set to "--experimental-require-module" if using custom node path with Node.js v25+
+  -- PDF options
+  pdf_notes = false, -- Add presenter notes to PDF as annotations
+  pdf_outlines = false, -- Add outlines (bookmarks) to PDF
+  -- PPTX options
+  pptx_editable = false, -- Generate editable PPTX (experimental)
+  -- Image options
+  image_scale = 1, -- Scale factor for rendered images (2 for retina)
+  jpeg_quality = 85, -- JPEG image quality (1-100)
+  -- Theme options
+  theme_set = {}, -- Additional theme CSS file paths
 }
 
 -- Setup function
@@ -82,6 +93,47 @@ end
 local function get_node_env_prefix()
   if M.config.node_options and M.config.node_options ~= "" then
     return "NODE_OPTIONS=" .. M.config.node_options .. " "
+  end
+  return ""
+end
+
+-- Build common options applied to all marp invocations (theme-set, etc.)
+local function get_common_options()
+  local opts = {}
+  for _, path in ipairs(M.config.theme_set or {}) do
+    table.insert(opts, "--theme-set '" .. path .. "'")
+  end
+  if #opts > 0 then
+    return " " .. table.concat(opts, " ")
+  end
+  return ""
+end
+
+-- Build format-specific options for export
+local function get_export_options(format)
+  local opts = {}
+  if format == "pdf" then
+    if M.config.pdf_notes then
+      table.insert(opts, "--pdf-notes")
+    end
+    if M.config.pdf_outlines then
+      table.insert(opts, "--pdf-outlines")
+    end
+  elseif format == "pptx" then
+    if M.config.pptx_editable then
+      table.insert(opts, "--pptx-editable")
+    end
+  end
+  if format == "png" or format == "jpeg" or format == "thumbnail_png" or format == "thumbnail_jpeg" then
+    if M.config.image_scale ~= 1 then
+      table.insert(opts, "--image-scale " .. M.config.image_scale)
+    end
+  end
+  if (format == "jpeg" or format == "thumbnail_jpeg") and M.config.jpeg_quality ~= 85 then
+    table.insert(opts, "--jpeg-quality " .. M.config.jpeg_quality)
+  end
+  if #opts > 0 then
+    return " " .. table.concat(opts, " ")
   end
   return ""
 end
@@ -144,6 +196,7 @@ function M.watch()
   local marp_cmd = get_marp_cmd()
   local project_root = find_marp_config_dir(file)
   local allow_local = M.config.allow_local_files and " --allow-local-files" or ""
+  local common_opts = get_common_options()
 
   -- Calculate HTML file path
   local html_file = file:gsub("%.md$", ".html")
@@ -152,11 +205,11 @@ function M.watch()
   -- Choose between server mode (-s) or watch mode (--watch) based on config
   local cmd
   if M.config.server_mode then
-    cmd = string.format("%s -s '%s'%s", marp_cmd, file, allow_local)
+    cmd = string.format("%s -s '%s'%s%s", marp_cmd, file, allow_local, common_opts)
   else
     -- Use --watch with optional --html flag
     local html_option = M.config.html_option and " --html" or ""
-    cmd = string.format("%s --watch '%s'%s%s", marp_cmd, file, html_option, allow_local)
+    cmd = string.format("%s --watch '%s'%s%s%s", marp_cmd, file, html_option, allow_local, common_opts)
   end
 
   -- Show HTML file path
@@ -180,8 +233,16 @@ function M.watch()
   if not M.config.server_mode then
     vim.notify("Generating initial HTML...", vim.log.levels.INFO)
     local html_option = M.config.html_option and " --html" or ""
-    local init_cmd =
-      string.format("cd '%s' && %s '%s'%s%s -o '%s'", project_root, marp_cmd, file, html_option, allow_local, html_file)
+    local init_cmd = string.format(
+      "cd '%s' && %s '%s'%s%s%s -o '%s'",
+      project_root,
+      marp_cmd,
+      file,
+      html_option,
+      allow_local,
+      common_opts,
+      html_file
+    )
     local result = vim.fn.system(init_cmd)
 
     if vim.v.shell_error ~= 0 then
@@ -365,8 +426,10 @@ function M.export(format)
   local marp_cmd = get_marp_cmd()
   local project_root = find_marp_config_dir(file)
   local allow_local = M.config.allow_local_files and " --allow-local-files" or ""
+  local common_opts = get_common_options()
+  local format_opts = get_export_options(format)
   local output_file = file:gsub("%.md$", "")
-  local cmd = string.format("%s %s '%s'%s", marp_cmd, export_flag, file, allow_local)
+  local cmd = string.format("%s %s '%s'%s%s%s", marp_cmd, export_flag, file, allow_local, common_opts, format_opts)
 
   -- Determine output filename
   local ext_map = {
@@ -375,6 +438,7 @@ function M.export(format)
     pptx = ".pptx",
     png = ".001.png",
     jpeg = ".001.jpg",
+    notes = ".txt",
   }
   local output_path = output_file .. (ext_map[format] or "")
 
@@ -452,7 +516,8 @@ function M.preview()
   local marp_cmd = get_marp_cmd()
   local project_root = find_marp_config_dir(file)
   local allow_local = M.config.allow_local_files and " --allow-local-files" or ""
-  local cmd = string.format("%s -p '%s'%s", marp_cmd, file, allow_local)
+  local common_opts = get_common_options()
+  local cmd = string.format("%s -p '%s'%s%s", marp_cmd, file, allow_local, common_opts)
 
   local shell_cmd = { "/bin/sh", "-c", cmd }
   vim.fn.jobstart(shell_cmd, {
@@ -496,6 +561,89 @@ function M.preview()
             end
           end)
         end
+      end
+    end,
+  })
+end
+
+-- Generate thumbnail from first slide
+function M.thumbnail(format)
+  local file = vim.api.nvim_buf_get_name(0)
+
+  if file == "" or not file:match("%.md$") then
+    vim.notify("Not a markdown file", vim.log.levels.ERROR)
+    return
+  end
+
+  format = format or "png"
+  if format ~= "png" and format ~= "jpeg" then
+    vim.notify("Thumbnail format must be png or jpeg", vim.log.levels.ERROR)
+    return
+  end
+
+  local marp_cmd = get_marp_cmd()
+  local project_root = find_marp_config_dir(file)
+  local allow_local = M.config.allow_local_files and " --allow-local-files" or ""
+  local common_opts = get_common_options()
+  local format_opts = get_export_options("thumbnail_" .. format)
+  local cmd = string.format("%s --image %s '%s'%s%s%s", marp_cmd, format, file, allow_local, common_opts, format_opts)
+
+  local ext = format == "jpeg" and ".jpg" or ".png"
+  local output_path = file:gsub("%.md$", ext)
+
+  vim.notify("Generating thumbnail...", vim.log.levels.INFO)
+
+  local shell_cmd = { "/bin/sh", "-c", cmd }
+  vim.fn.jobstart(shell_cmd, {
+    cwd = project_root,
+    stdout_buffered = false,
+    stderr_buffered = false,
+    detach = true,
+    on_stdout = function(_, data)
+      for _, line in ipairs(data) do
+        if line ~= "" then
+          vim.schedule(function()
+            local clean_line = clean_ansi(line)
+            if M.config.debug then
+              vim.notify("[Thumbnail stdout] " .. clean_line, vim.log.levels.DEBUG)
+            end
+          end)
+        end
+      end
+    end,
+    on_stderr = function(_, data)
+      for _, line in ipairs(data) do
+        if line ~= "" then
+          vim.schedule(function()
+            local clean_line = clean_ansi(line)
+            if M.config.debug then
+              vim.notify("[Thumbnail stderr] " .. clean_line, vim.log.levels.DEBUG)
+            end
+          end)
+        end
+      end
+    end,
+    on_exit = function(_, exit_code)
+      if exit_code == 0 then
+        M.metadata.last_export = {
+          format = "thumbnail_" .. format,
+          file = output_path,
+          time = os.date("%Y-%m-%d %H:%M:%S"),
+        }
+
+        vim.notify("Thumbnail: " .. output_path, vim.log.levels.INFO)
+
+        if M.config.show_file_size and vim.fn.filereadable(output_path) == 1 then
+          local size = vim.fn.getfsize(output_path)
+          vim.notify("File size: " .. M.format_file_size(size), vim.log.levels.INFO)
+        end
+
+        if M.config.auto_copy_path then
+          vim.fn.setreg("+", output_path)
+          vim.notify("Path copied to clipboard", vim.log.levels.INFO)
+        end
+      else
+        vim.notify("Thumbnail generation failed", vim.log.levels.ERROR)
       end
     end,
   })
