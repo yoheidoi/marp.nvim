@@ -14,7 +14,7 @@ M.metadata = {
 
 -- Configuration
 M.config = {
-  marp_command = "/opt/homebrew/opt/node/bin/node /opt/homebrew/bin/marp",
+  marp_command = "marp",
   browser = nil, -- auto-detect
   themes = {
     default = "default",
@@ -36,6 +36,8 @@ M.config = {
   debug = true, -- Enable debug logging
   server_mode = false, -- Use watch mode (-w) by default
   html_option = true, -- Use --html option in watch mode by default
+  allow_local_files = true, -- Use --allow-local-files for local asset loading
+  node_options = "", -- Set to "--experimental-require-module" if using custom node path with Node.js v25+
 }
 
 -- Setup function
@@ -49,21 +51,58 @@ local function clean_ansi(str)
   return str:gsub("\27%[[%d;]*m", ""):gsub("\27%[[%d;]*[A-Za-z]", "")
 end
 
+-- Find project root by looking for Marp config files
+local function find_marp_config_dir(file_path)
+  local config_names = {
+    ".marprc.yml",
+    ".marprc.yaml",
+    ".marprc.json",
+    ".marprc.js",
+    "marp.config.js",
+    "marp.config.mjs",
+    "marp.config.cjs",
+  }
+  local dir = vim.fn.fnamemodify(file_path, ":h")
+  while dir ~= "/" and dir ~= "" do
+    for _, name in ipairs(config_names) do
+      if vim.fn.filereadable(dir .. "/" .. name) == 1 then
+        return dir
+      end
+    end
+    local parent = vim.fn.fnamemodify(dir, ":h")
+    if parent == dir then
+      break
+    end
+    dir = parent
+  end
+  return vim.fn.fnamemodify(file_path, ":h")
+end
+
+-- Build NODE_OPTIONS env prefix for Node.js compatibility
+local function get_node_env_prefix()
+  if M.config.node_options and M.config.node_options ~= "" then
+    return "NODE_OPTIONS=" .. M.config.node_options .. " "
+  end
+  return ""
+end
+
 -- Get Marp executable
 local function get_marp_cmd()
+  local env_prefix = get_node_env_prefix()
+
   -- First check if custom command is set
   if M.config.marp_command and M.config.marp_command ~= "" then
-    return M.config.marp_command
+    return env_prefix .. M.config.marp_command
   end
 
   -- Check if marp is available locally
   local marp_check = vim.fn.system("which marp")
   if vim.v.shell_error == 0 and marp_check ~= "" then
-    return vim.trim(marp_check)
+    return env_prefix .. vim.trim(marp_check)
   end
 
   -- Default to npx
-  return "npx @marp-team/marp-cli@latest"
+  return env_prefix .. "npx @marp-team/marp-cli@latest"
 end
 
 -- Watch current file with Marp
@@ -103,6 +142,8 @@ function M.watch()
   M.metadata.browser_opened[bufnr] = false
 
   local marp_cmd = get_marp_cmd()
+  local project_root = find_marp_config_dir(file)
+  local allow_local = M.config.allow_local_files and " --allow-local-files" or ""
 
   -- Calculate HTML file path
   local html_file = file:gsub("%.md$", ".html")
@@ -111,11 +152,11 @@ function M.watch()
   -- Choose between server mode (-s) or watch mode (--watch) based on config
   local cmd
   if M.config.server_mode then
-    cmd = string.format("%s -s '%s'", marp_cmd, file)
+    cmd = string.format("%s -s '%s'%s", marp_cmd, file, allow_local)
   else
     -- Use --watch with optional --html flag
     local html_option = M.config.html_option and " --html" or ""
-    cmd = string.format("%s --watch '%s'%s", marp_cmd, file, html_option)
+    cmd = string.format("%s --watch '%s'%s%s", marp_cmd, file, html_option, allow_local)
   end
 
   -- Show HTML file path
@@ -139,7 +180,8 @@ function M.watch()
   if not M.config.server_mode then
     vim.notify("Generating initial HTML...", vim.log.levels.INFO)
     local html_option = M.config.html_option and " --html" or ""
-    local init_cmd = string.format("%s '%s'%s -o '%s'", marp_cmd, file, html_option, html_file)
+    local init_cmd =
+      string.format("cd '%s' && %s '%s'%s%s -o '%s'", project_root, marp_cmd, file, html_option, allow_local, html_file)
     local result = vim.fn.system(init_cmd)
 
     if vim.v.shell_error ~= 0 then
@@ -174,6 +216,7 @@ function M.watch()
   -- Use shell to execute the command properly
   local shell_cmd = { "/bin/sh", "-c", cmd }
   local job_id = vim.fn.jobstart(shell_cmd, {
+    cwd = project_root,
     pty = true, -- Use pseudo-terminal for proper output capture
     stdout_buffered = false,
     stderr_buffered = false,
@@ -320,8 +363,10 @@ function M.export(format)
   end
 
   local marp_cmd = get_marp_cmd()
+  local project_root = find_marp_config_dir(file)
+  local allow_local = M.config.allow_local_files and " --allow-local-files" or ""
   local output_file = file:gsub("%.md$", "")
-  local cmd = string.format("%s %s '%s'", marp_cmd, export_flag, file)
+  local cmd = string.format("%s %s '%s'%s", marp_cmd, export_flag, file, allow_local)
 
   -- Determine output filename
   local ext_map = {
@@ -337,6 +382,7 @@ function M.export(format)
 
   local shell_cmd = { "/bin/sh", "-c", cmd }
   vim.fn.jobstart(shell_cmd, {
+    cwd = project_root,
     stdout_buffered = false,
     stderr_buffered = false,
     detach = true,
@@ -404,10 +450,13 @@ function M.preview()
   end
 
   local marp_cmd = get_marp_cmd()
-  local cmd = string.format("%s -p '%s'", marp_cmd, file)
+  local project_root = find_marp_config_dir(file)
+  local allow_local = M.config.allow_local_files and " --allow-local-files" or ""
+  local cmd = string.format("%s -p '%s'%s", marp_cmd, file, allow_local)
 
   local shell_cmd = { "/bin/sh", "-c", cmd }
   vim.fn.jobstart(shell_cmd, {
+    cwd = project_root,
     stdout_buffered = false,
     stderr_buffered = false,
     detach = true,
@@ -752,6 +801,7 @@ function M.debug()
   end
 
   local marp_cmd = get_marp_cmd()
+  local project_root = find_marp_config_dir(file)
   local test_cmd = string.format("%s --version", marp_cmd)
 
   vim.notify("=== Marp Debug Info ===", vim.log.levels.INFO)
@@ -760,7 +810,27 @@ function M.debug()
   -- Show current state
   vim.notify("Buffer: " .. bufnr, vim.log.levels.INFO)
   vim.notify("File: " .. file, vim.log.levels.INFO)
+  vim.notify("Project root: " .. project_root, vim.log.levels.INFO)
   vim.notify("Active process: " .. (M.active_processes[bufnr] or "none"), vim.log.levels.INFO)
+
+  -- Show detected config file
+  local config_names = {
+    ".marprc.yml",
+    ".marprc.yaml",
+    ".marprc.json",
+    ".marprc.js",
+    "marp.config.js",
+    "marp.config.mjs",
+    "marp.config.cjs",
+  }
+  local found_config = "none"
+  for _, name in ipairs(config_names) do
+    if vim.fn.filereadable(project_root .. "/" .. name) == 1 then
+      found_config = project_root .. "/" .. name
+      break
+    end
+  end
+  vim.notify("Config file: " .. found_config, vim.log.levels.INFO)
 
   -- Show metadata
   if M.metadata.process_retries[bufnr] then
@@ -773,10 +843,12 @@ function M.debug()
   -- Show config
   vim.notify("Server mode: " .. tostring(M.config.server_mode), vim.log.levels.INFO)
   vim.notify("Debug mode: " .. tostring(M.config.debug), vim.log.levels.INFO)
+  vim.notify("Allow local files: " .. tostring(M.config.allow_local_files), vim.log.levels.INFO)
 
   -- Test if marp command works
   local shell_cmd = { "/bin/sh", "-c", test_cmd }
   vim.fn.jobstart(shell_cmd, {
+    cwd = project_root,
     stdout_buffered = false,
     stderr_buffered = false,
     detach = true,

@@ -30,7 +30,7 @@ A Neovim plugin for [Marp](https://marp.app/) (Markdown Presentation Ecosystem).
   config = function()
     require("marp").setup {
       -- Optional configuration
-      marp_command = "/opt/homebrew/opt/node/bin/node /opt/homebrew/bin/marp",
+      marp_command = "marp", -- default: "marp" (uses marp from PATH)
       browser = nil, -- auto-detect
       server_mode = false, -- Use watch mode (-w)
     }
@@ -105,12 +105,12 @@ use {
 
 ```lua
 require('marp').setup({
-  -- Marp CLI command (uses local marp if available)
-  marp_command = "npx @marp-team/marp-cli@latest",
-  
+  -- Marp CLI command (default: "marp", auto-detected from PATH)
+  marp_command = "marp",
+
   -- Browser command (nil = auto-detect)
   browser = nil,
-  
+
   -- Available themes
   themes = {
     default = "default",
@@ -209,7 +209,7 @@ require('marp').setup({ server_mode = true })
   config = function()
     require("marp").setup {
       -- オプション設定
-      marp_command = "/opt/homebrew/opt/node/bin/node /opt/homebrew/bin/marp",
+      marp_command = "marp", -- デフォルト: "marp"（PATH上のmarpを使用）
       browser = nil, -- 自動検出
       server_mode = false, -- ウォッチモード(-w)を使用
     }
@@ -284,12 +284,12 @@ use {
 
 ```lua
 require('marp').setup({
-  -- Marp CLIコマンド（ローカルのmarpがあれば使用）
-  marp_command = "npx @marp-team/marp-cli@latest",
-  
+  -- Marp CLIコマンド（デフォルト: "marp"、PATH上のmarpを自動検出）
+  marp_command = "marp",
+
   -- ブラウザコマンド（nil = 自動検出）
   browser = nil,
-  
+
   -- 利用可能なテーマ
   themes = {
     default = "default",

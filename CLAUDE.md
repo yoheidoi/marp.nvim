@@ -124,7 +124,7 @@ stylua lua/ plugin/ --glob '**/*.lua'              # stylua自動修正
 
 ```lua
 require('marp').setup({
-  marp_command = "/opt/homebrew/opt/node/bin/node /opt/homebrew/bin/marp",
+  marp_command = "marp",  -- デフォルト: "marp"（PATH上のmarpを使用）
   browser = nil,  -- 自動検出
   debug = true,   -- 開発時はtrueを推奨
   server_mode = false,  -- ウォッチモード使用
