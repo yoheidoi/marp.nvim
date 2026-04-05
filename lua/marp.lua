@@ -49,11 +49,18 @@ M.config = {
   jpeg_quality = 85, -- JPEG image quality (1-100)
   -- Theme options
   theme_set = {}, -- Additional theme CSS file paths
+  default_theme = nil, -- Default theme for presentations
 }
 
 -- Setup function
 function M.setup(opts)
   M.config = vim.tbl_deep_extend("force", M.config, opts or {})
+  -- Register named theme_set entries to themes
+  for _, entry in ipairs(M.config.theme_set or {}) do
+    if type(entry) == "table" and entry.name then
+      M.config.themes[entry.name] = entry.name
+    end
+  end
 end
 
 -- Helper function to clean ANSI escape sequences
@@ -97,11 +104,15 @@ local function get_node_env_prefix()
   return ""
 end
 
--- Build common options applied to all marp invocations (theme-set, etc.)
+-- Build common options applied to all marp invocations (theme-set, default-theme, etc.)
 local function get_common_options()
   local opts = {}
-  for _, path in ipairs(M.config.theme_set or {}) do
+  for _, entry in ipairs(M.config.theme_set or {}) do
+    local path = type(entry) == "table" and entry.path or entry
     table.insert(opts, "--theme-set '" .. path .. "'")
+  end
+  if M.config.default_theme then
+    table.insert(opts, "--theme " .. M.config.default_theme)
   end
   if #opts > 0 then
     return " " .. table.concat(opts, " ")

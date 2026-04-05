@@ -86,7 +86,7 @@ use {
 | `:MarpPreview` | One-time preview (opens and exits) |
 | `:MarpList` | List all active Marp servers |
 | `:MarpExport [format]` | Export to format (html/pdf/pptx/png/jpeg) |
-| `:MarpTheme [theme]` | Set theme (default/gaia/uncover) |
+| `:MarpTheme [theme]` | Set theme (built-in + custom themes) |
 | `:MarpSnippet [name]` | Insert snippet |
 | `:MarpInfo` | Show current Marp information |
 | `:MarpCopyPath` | Copy HTML file path to clipboard |
@@ -127,6 +127,10 @@ require('marp').setup({
     jpeg = "--images jpeg"
   },
   
+  -- Theme options
+  theme_set = {}, -- Custom theme CSS files (can be { name = "...", path = "..." })
+  default_theme = nil, -- Default theme when frontmatter theme: is not specified
+
   -- New features
   show_tips = true,           -- Show helpful tips
   auto_copy_path = true,      -- Auto-copy file paths to clipboard
@@ -265,7 +269,7 @@ use {
 | `:MarpPreview` | 一回限りのプレビュー |
 | `:MarpList` | アクティブなMarpサーバーを一覧表示 |
 | `:MarpExport [形式]` | 指定形式でエクスポート (html/pdf/pptx/png/jpeg) |
-| `:MarpTheme [テーマ]` | テーマを設定 (default/gaia/uncover) |
+| `:MarpTheme [テーマ]` | テーマを設定 (ビルトイン + カスタムテーマ) |
 | `:MarpSnippet [名前]` | スニペットを挿入 |
 | `:MarpInfo` | 現在のMarp情報を表示 |
 | `:MarpCopyPath` | HTMLファイルパスをクリップボードにコピー |
@@ -306,6 +310,10 @@ require('marp').setup({
     jpeg = "--images jpeg"
   },
   
+  -- テーマオプション
+  theme_set = {}, -- カスタムテーマCSSファイル ({ name = "...", path = "..." } 形式も対応)
+  default_theme = nil, -- frontmatterに theme: が指定されない場合のデフォルトテーマ
+
   -- 新機能
   show_tips = true,           -- 便利なヒントを表示
   auto_copy_path = true,      -- ファイルパスを自動でクリップボードにコピー

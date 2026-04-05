@@ -38,7 +38,12 @@ require('marp').setup({
   pptx_editable = false,        -- 編集可能PPTX
   image_scale = 1,              -- 画像倍率
   jpeg_quality = 85,            -- JPEG品質
-  theme_set = {},               -- カスタムテーマCSS
+  -- テーマオプション
+  theme_set = {                 -- カスタムテーマ（文字列またはテーブル形式）
+    -- 文字列形式（後方互換）: "/path/to/theme.css"
+    -- テーブル形式: { name = "my-theme", path = "~/.config/marp/my-theme.css" }
+  },
+  default_theme = nil,          -- frontmatterに theme: がない場合のデフォルトテーマ
 })
 ```
 

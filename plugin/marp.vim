@@ -41,7 +41,7 @@ function! s:complete_thumbnail_formats(A, L, P)
 endfunction
 
 function! s:complete_themes(A, L, P)
-  return ['default', 'gaia', 'uncover']
+  return luaeval('vim.tbl_keys(require("marp").config.themes)')
 endfunction
 
 function! s:complete_snippets(A, L, P)
