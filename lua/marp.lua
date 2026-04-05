@@ -223,13 +223,12 @@ function M.watch()
     cmd = string.format("%s --watch '%s'%s%s%s", marp_cmd, file, html_option, allow_local, common_opts)
   end
 
-  -- Show HTML file path
-  vim.notify("HTML file: " .. html_file, vim.log.levels.INFO)
-
-  -- Copy to clipboard if enabled
+  -- Show HTML file path or copy to clipboard
   if M.config.auto_copy_path then
     vim.fn.setreg("+", html_file)
     vim.notify("✓ Path copied to clipboard", vim.log.levels.INFO)
+  else
+    vim.notify("HTML file: " .. html_file, vim.log.levels.INFO)
   end
 
   -- Check if HTML should be gitignored
@@ -238,11 +237,12 @@ function M.watch()
   end
 
   -- Debug output the command
-  vim.notify("Starting Marp: " .. cmd, vim.log.levels.INFO)
+  if M.config.debug then
+    vim.notify("Starting Marp: " .. cmd, vim.log.levels.INFO)
+  end
 
   -- First generate HTML file if in watch mode
   if not M.config.server_mode then
-    vim.notify("Generating initial HTML...", vim.log.levels.INFO)
     local html_option = M.config.html_option and " --html" or ""
     local init_cmd = string.format(
       "cd '%s' && %s '%s'%s%s%s -o '%s'",
@@ -298,8 +298,10 @@ function M.watch()
           vim.schedule(function()
             local clean_line = clean_ansi(line)
 
-            -- Always show all output to see what's happening
-            vim.notify("[Marp] " .. clean_line, vim.log.levels.INFO)
+            -- Show all output only in debug mode
+            if M.config.debug then
+              vim.notify("[Marp] " .. clean_line, vim.log.levels.INFO)
+            end
 
             -- Check for file conversion patterns with debouncing
             if clean_line:match("=>") or clean_line:match("has been written") then
@@ -319,8 +321,10 @@ function M.watch()
           vim.schedule(function()
             local clean_line = clean_ansi(line)
 
-            -- Always show all output to see what's happening
-            vim.notify("[Marp] " .. clean_line, vim.log.levels.INFO)
+            -- Show all output only in debug mode
+            if M.config.debug then
+              vim.notify("[Marp] " .. clean_line, vim.log.levels.INFO)
+            end
 
             -- Check for file conversion patterns with debouncing
             if clean_line:match("=>") or clean_line:match("has been written") then
@@ -352,7 +356,9 @@ function M.watch()
           end, 2000)
         end
       else
-        vim.notify("Marp server stopped", vim.log.levels.INFO)
+        if M.config.debug then
+          vim.notify("Marp server stopped", vim.log.levels.INFO)
+        end
       end
     end,
   })
@@ -963,15 +969,6 @@ function M.debug()
   local project_root = find_marp_config_dir(file)
   local test_cmd = string.format("%s --version", marp_cmd)
 
-  vim.notify("=== Marp Debug Info ===", vim.log.levels.INFO)
-  vim.notify("Testing Marp command...", vim.log.levels.INFO)
-
-  -- Show current state
-  vim.notify("Buffer: " .. bufnr, vim.log.levels.INFO)
-  vim.notify("File: " .. file, vim.log.levels.INFO)
-  vim.notify("Project root: " .. project_root, vim.log.levels.INFO)
-  vim.notify("Active process: " .. (M.active_processes[bufnr] or "none"), vim.log.levels.INFO)
-
   -- Show detected config file
   local config_names = {
     ".marprc.yml",
@@ -989,20 +986,29 @@ function M.debug()
       break
     end
   end
-  vim.notify("Config file: " .. found_config, vim.log.levels.INFO)
 
-  -- Show metadata
+  -- Gather all debug info
+  local debug_lines = {
+    "=== Marp Debug Info ===",
+    "Buffer: " .. bufnr,
+    "File: " .. file,
+    "Project root: " .. project_root,
+    "Active process: " .. (M.active_processes[bufnr] or "none"),
+    "Config file: " .. found_config,
+    "Server mode: " .. tostring(M.config.server_mode),
+    "Debug mode: " .. tostring(M.config.debug),
+    "Allow local files: " .. tostring(M.config.allow_local_files),
+  }
+
   if M.metadata.process_retries[bufnr] then
-    vim.notify("Process retries: " .. M.metadata.process_retries[bufnr], vim.log.levels.INFO)
+    table.insert(debug_lines, "Process retries: " .. M.metadata.process_retries[bufnr])
   end
   if M.metadata.browser_opened[bufnr] then
-    vim.notify("Browser opened: " .. tostring(M.metadata.browser_opened[bufnr]), vim.log.levels.INFO)
+    table.insert(debug_lines, "Browser opened: " .. tostring(M.metadata.browser_opened[bufnr]))
   end
 
-  -- Show config
-  vim.notify("Server mode: " .. tostring(M.config.server_mode), vim.log.levels.INFO)
-  vim.notify("Debug mode: " .. tostring(M.config.debug), vim.log.levels.INFO)
-  vim.notify("Allow local files: " .. tostring(M.config.allow_local_files), vim.log.levels.INFO)
+  vim.notify(table.concat(debug_lines, "\n"), vim.log.levels.INFO)
+  vim.notify("Testing Marp command...", vim.log.levels.INFO)
 
   -- Test if marp command works
   local shell_cmd = { "/bin/sh", "-c", test_cmd }
