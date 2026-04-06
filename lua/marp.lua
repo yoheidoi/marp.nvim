@@ -50,6 +50,8 @@ M.config = {
   -- Theme options
   theme_set = {}, -- Additional theme CSS file paths
   default_theme = nil, -- Default theme for presentations
+  -- Output options
+  output_dir = nil, -- HTML output directory (nil = same directory as source file)
 }
 
 -- Setup function
@@ -210,7 +212,15 @@ function M.watch()
   local common_opts = get_common_options()
 
   -- Calculate HTML file path
-  local html_file = file:gsub("%.md$", ".html")
+  local html_filename = vim.fn.fnamemodify(file, ":t:r") .. ".html"
+  local html_file
+  if M.config.output_dir and M.config.output_dir ~= "" then
+    local dir = vim.fn.expand(M.config.output_dir)
+    vim.fn.mkdir(dir, "p")
+    html_file = dir .. "/" .. html_filename
+  else
+    html_file = file:gsub("%.md$", ".html")
+  end
   M.metadata.html_files[bufnr] = html_file
 
   -- Choose between server mode (-s) or watch mode (--watch) based on config

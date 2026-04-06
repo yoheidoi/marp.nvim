@@ -44,6 +44,7 @@ require('marp').setup({
     -- テーブル形式: { name = "my-theme", path = "~/.config/marp/my-theme.css" }
   },
   default_theme = nil,          -- frontmatterに theme: がない場合のデフォルトテーマ
+  output_dir = nil,             -- HTMLの出力先ディレクトリ（nil=ソースと同じ）
 })
 ```
 
