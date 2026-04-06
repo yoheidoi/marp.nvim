@@ -226,11 +226,12 @@ function M.watch()
   -- Choose between server mode (-s) or watch mode (--watch) based on config
   local cmd
   if M.config.server_mode then
-    cmd = string.format("%s -s '%s'%s%s", marp_cmd, file, allow_local, common_opts)
+    cmd = string.format("%s -s '%s'%s%s -o '%s'", marp_cmd, file, allow_local, common_opts, html_file)
   else
     -- Use --watch with optional --html flag
     local html_option = M.config.html_option and " --html" or ""
-    cmd = string.format("%s --watch '%s'%s%s%s", marp_cmd, file, html_option, allow_local, common_opts)
+    cmd =
+      string.format("%s --watch '%s'%s%s%s -o '%s'", marp_cmd, file, html_option, allow_local, common_opts, html_file)
   end
 
   -- Show HTML file path or copy to clipboard
